@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=400, initial-scale=1.0">
+    <title>Page Summariser</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <button id="backBtn" class="back-btn hidden" aria-label="Go back">
+                ← Back
+            </button>
+            <h1 id="headerTitle">Page Summariser</h1>
+            <div class="header-spacer"></div>
+        </header>
+
+        <!-- Main View (API Key + History) -->
+        <div id="mainView" class="view">
+            <!-- API Key Section -->
+            <div class="api-section">
+                <div class="api-header" id="apiHeader">
+                    <span class="api-status" id="apiStatus">
+                        <span class="status-dot" id="statusDot"></span>
+                        <span id="apiStatusText">API Key Not Set</span>
+                    </span>
+                    <button class="btn-icon" id="toggleApiSection" aria-label="Toggle API settings">
+                        ⚙️
+                    </button>
+                </div>
+                <div class="api-form hidden" id="apiForm">
+                    <div class="form-group">
+                        <label for="apiKey">OpenRouter API Key</label>
+                        <div class="input-with-toggle">
+                            <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key"
+                                autocomplete="off">
+                            <button type="button" class="toggle-visibility" id="toggleApiKey"
+                                aria-label="Toggle API key visibility">
+                                👁️
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="customCode">Model (optional)</label>
+                        <input type="text" id="customCode" placeholder="e.g., google/gemini-2.0-flash-exp:free"
+                            autocomplete="off">
+                        <small class="hint">Leave empty to auto-cycle free models</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model Status -->
+            <div class="model-status" id="modelStatus">
+                <span class="model-status-icon">🤖</span>
+                <span class="model-status-text" id="modelStatusText">Loading...</span>
+            </div>
+
+            <!-- Summarize Current Page Button -->
+            <button id="summarizeBtn" class="btn btn-primary btn-summarize">
+                📄 Summarize Current Page
+            </button>
+
+            <!-- History Section -->
+            <div class="history-section">
+                <div class="history-header">
+                    <h2>📚 History</h2>
+                    <button id="clearHistoryBtn" class="btn-text" title="Clear all history">
+                        Clear All
+                    </button>
+                </div>
+                <div id="historyList" class="history-list">
+                    <div class="empty-history">
+                        <span class="empty-icon">📝</span>
+                        <p>No summaries yet</p>
+                        <small>Summarize a page to see it here</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingView" class="view hidden">
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
+                <p class="loading-text" id="loadingText">Extracting content...</p>
+                <p class="loading-subtext" id="loadingSubtext"></p>
+            </div>
+        </div>
+
+        <!-- Summary Detail View -->
+        <div id="detailView" class="view hidden">
+            <div class="detail-meta" id="detailMeta">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="detail-actions">
+                <button id="exportBtn" class="btn btn-secondary">
+                    💾 Export to File
+                </button>
+                <button id="deleteEntryBtn" class="btn btn-danger-outline">
+                    🗑️ Delete
+                </button>
+            </div>
+            <div class="detail-content" id="detailContent">
+                <!-- Summary content -->
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorView" class="view hidden">
+            <div class="error-container">
+                <div class="error-icon">⚠️</div>
+                <h3>Error</h3>
+                <p id="errorMessage" class="error-message"></p>
+                <button id="retryBtn" class="btn btn-primary">Try Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

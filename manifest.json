@@ -1,0 +1,45 @@
+{
+    "manifest_version": 3,
+    "name": "Page Summariser",
+    "version": "2.1.0",
+    "description": "Summarize webpage content using OpenRouter API and export to text files",
+    "permissions": [
+        "activeTab",
+        "storage",
+        "scripting",
+        "downloads"
+    ],
+    "host_permissions": [
+        "https://openrouter.ai/*"
+    ],
+    "action": {
+        "default_popup": "popup/popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "background/service-worker.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content/content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    }
+}
