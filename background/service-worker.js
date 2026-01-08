@@ -19,11 +19,11 @@ const CONFIG = {
 
 // Free models to cycle through (in order of preference) - Updated January 2026
 const FREE_MODELS = [
-    'deepseek/deepseek-chat-v3.1',
-    'moonshotai/kimi-k2',
-    'google/gemini-2.0-flash-exp',
-    'qwen/qwen3-coder',
-    'cognitivecomputations/dolphin-mistral-24b-venice-edition'
+    'google/gemini-2.0-flash-exp:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'deepseek/deepseek-r1:free',
+    'qwen/qwen-2.5-coder-32b-instruct:free',
+    'cognitivecomputations/dolphin-mistral-24b-venice-edition:free'
 ];
 
 // Track exhausted models for the day (resets at midnight UTC)
@@ -34,9 +34,9 @@ let lastResetDate = new Date().toUTCString().split(' ').slice(0, 4).join(' ');
 const MODEL_INFO = {
     // Free models
     'google/gemini-2.0-flash-exp:free': { name: 'Gemini 2.0 Flash', context: '1M tokens', provider: 'Google' },
-    'deepseek/deepseek-chat-v3.1:free': { name: 'DeepSeek Chat v3.1', context: '64K tokens', provider: 'DeepSeek' },
-    'moonshotai/kimi-k2:free': { name: 'Kimi K2', context: '128K tokens', provider: 'Moonshot' },
-    'qwen/qwen3-coder:free': { name: 'Qwen3 Coder', context: '32K tokens', provider: 'Alibaba' },
+    'meta-llama/llama-3.3-70b-instruct:free': { name: 'Llama 3.3 70B', context: '128K tokens', provider: 'Meta' },
+    'deepseek/deepseek-r1:free': { name: 'DeepSeek R1', context: '128K tokens', provider: 'DeepSeek' },
+    'qwen/qwen-2.5-coder-32b-instruct:free': { name: 'Qwen 2.5 Coder 32B', context: '32K tokens', provider: 'Alibaba' },
     'cognitivecomputations/dolphin-mistral-24b-venice-edition:free': { name: 'Dolphin Mistral 24B', context: '32K tokens', provider: 'Cognitive Computations' },
     // Paid models
     'openai/gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: '16K tokens', provider: 'OpenAI' },
@@ -164,7 +164,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === 'summarize') {
         log('info', 'Received summarize request');
+        // Don't await here to return true immediately for async response
         handleSummarize(request, sendResponse);
+        return true;
+    }
+
+    if (request.action === 'ping') {
+        log('info', 'Keep-alive ping received');
+        sendResponse({ status: 'alive' });
         return true;
     }
 
@@ -180,8 +187,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 console.log('=== SERVICE WORKER READY ===');
 
+// Keep-alive connection handler
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'keepAlive') {
+        log('info', 'Keep-alive port connected');
+        port.onDisconnect.addListener(() => {
+            log('info', 'Keep-alive port disconnected');
+        });
+    }
+});
+
 async function handleSummarize(request, sendResponse) {
     try {
+        // Ensure state is loaded
+        await loadExhaustedModels();
+
         const { text, apiKey, customCode } = request;
 
         log('info', `Request details: textLength=${text?.length || 0}, hasApiKey=${!!apiKey}, customCode=${customCode || 'default'}`);
@@ -333,6 +353,13 @@ function splitIntoChunks(text, chunkSize = CONFIG.CHUNK_SIZE) {
 
         if (lastPeriod > chunkSize * 0.5) {
             breakPoint = lastPeriod + 1;
+        } else {
+            // Fallback: try to split by space if no good sentence break found
+            const lastSpace = chunk.lastIndexOf(' ');
+            if (lastSpace > chunkSize * 0.5) {
+                breakPoint = lastSpace + 1;
+            }
+            // Else default to strict chunkSize split (which might break a word, but prevents infinite loop)
         }
 
         chunks.push(remaining.substring(0, breakPoint).trim());
@@ -439,6 +466,12 @@ async function makeApiRequest(prompt, apiKey, model, maxTokens, retryCount = 0) 
             body: JSON.stringify({
                 model: model,
                 messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+                model: model,
+                messages: [
+                    { role: 'system', content: prompt.split('\n\nContent:')[0].trim() },
+                    { role: 'user', content: 'Content:\n' + prompt.split('\n\nContent:')[1] }
+                ],
                 temperature: 0.7,
                 max_tokens: maxTokens
             }),

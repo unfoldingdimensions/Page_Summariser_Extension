@@ -435,12 +435,24 @@
                 contentResponse = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
             } catch (e) {
                 if (e.message.includes('Could not establish connection')) {
+                    console.log('Connection failed, re-injecting...');
                     await chrome.scripting.executeScript({
                         target: { tabId: tab.id },
                         files: ['content/content.js']
                     });
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                    contentResponse = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+
+                    // Wait with exponential backoff
+                    for (let i = 0; i < 3; i++) {
+                        await new Promise(resolve => setTimeout(resolve, 200 * (i + 1)));
+                        try {
+                            contentResponse = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+                            if (contentResponse) break;
+                        } catch (err) {
+                            console.log(`Retry ${i + 1} failed`);
+                        }
+                    }
+                    if (!contentResponse) throw new Error('Failed to connect to page content script.');
+
                 } else {
                     throw new Error('Failed to communicate with page. Please refresh and try again.');
                 }
@@ -470,6 +482,22 @@
                 );
             }
 
+            // KEEP ALIVE: Connect to background to keep service worker alive
+            let keepAlivePort;
+            try {
+                keepAlivePort = chrome.runtime.connect({ name: 'keepAlive' });
+                // Send periodic pings
+                const pingInterval = setInterval(() => {
+                    chrome.runtime.sendMessage({ action: 'ping' }).catch(() => { });
+                }, 10000);
+
+                keepAlivePort.onDisconnect.addListener(() => {
+                    clearInterval(pingInterval);
+                });
+            } catch (e) {
+                console.warn('Failed to establish keep-alive port', e);
+            }
+
             // Send to background for summarization
             console.log('=== POPUP: Sending to background ===');
             console.log('Content length:', contentResponse.content?.length);
@@ -480,6 +508,11 @@
                 apiKey: apiKey,
                 customCode: customCode || null
             });
+
+            // Disconnect keep-alive
+            if (keepAlivePort) {
+                keepAlivePort.disconnect();
+            }
 
             console.log('=== POPUP: Response received ===');
             console.log('Success:', summaryResponse?.success);

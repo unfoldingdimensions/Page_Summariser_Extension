@@ -188,230 +188,113 @@
         });
 
         // Extract text while preserving list structure
-        // Prioritize lists over other content
+        // Linear traversal strategy: walk important block elements in order
         const textContent = [];
 
         log('=== LOOKING FOR CONTENT ===');
         log(`Clone element: ${clone.tagName}, children: ${clone.children.length}`);
-        log(`Clone text length: ${clone.textContent?.length || 0} chars`);
 
-        // FIRST: Check for numbered headings pattern (Top 10 lists, etc.)
-        // This is prioritized because it's the most reliable pattern for list articles
+        // Select all meaningful block elements
+        // We select them in document order
+        const blockSelectors = [
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'p',
+            'li',
+            'blockquote',
+            'pre',
+            'figcaption'
+        ];
 
-        log('=== LOOKING FOR NUMBERED HEADINGS (PRIORITY) ===');
+        const contentNodes = clone.querySelectorAll(blockSelectors.join(','));
+        log(`Found ${contentNodes.length} content nodes`);
 
-        // Look for numbered headings (e.g., "10) Title", "1. Title", "#1 Title")
-        const allHeadings = clone.querySelectorAll('h2, h3');
-        log(`Found ${allHeadings.length} h2/h3 headings`);
+        let skippedCount = 0;
+        let addedCount = 0;
 
-        const numberedItems = [];
+        contentNodes.forEach((node, idx) => {
+            // Skip nodes that are inside other nodes we already processed?
+            // querySelectorAll returns all descendants.
+            // If we process a <p>, we want it. If we process a <li> that contains a <p>, we might get duplicate text if we aren't careful.
+            // But usually <li> contains text directly or inline elements.
+            // A <p> inside a <p> is invalid.
+            // A <p> inside a <li> is valid. 
+            // If we verify the node has text content and isn't just a container for other blocks we already grabbed, we are good.
+            // Simple heuristic based on text content is usually fine for summarization.
 
-        allHeadings.forEach((heading, idx) => {
-            const headingText = heading.textContent.trim();
-            log(`Heading ${idx}: "${headingText.substring(0, 50)}..."`);
+            const text = node.textContent.trim();
 
-            // Match patterns like "10)", "10.", "#10", "10 -", "10:"
-            const numberMatch = headingText.match(/^[\#]?(\d+)[\)\.\:\-\s]/);
-
-            if (numberMatch) {
-                log(`  -> Matched number: ${numberMatch[1]}`);
-
-                // Found a numbered heading, get the next paragraph(s)
-                let description = '';
-                let nextEl = heading.nextElementSibling;
-                let paraCount = 0;
-
-                log(`  -> Looking for paragraphs after heading...`);
-
-                // Skip figures/images and collect paragraphs
-                while (nextEl && paraCount < 2) {
-                    log(`     Next sibling: ${nextEl.tagName}`);
-                    if (nextEl.tagName === 'P') {
-                        const paraText = nextEl.textContent.trim();
-                        log(`     Paragraph found: ${paraText.length} chars`);
-                        if (paraText.length > 20) {
-                            description += (description ? ' ' : '') + paraText;
-                            paraCount++;
-                        }
-                    } else if (nextEl.tagName === 'FIGURE' || nextEl.tagName === 'IMG') {
-                        log(`     Skipping figure/img`);
-                    } else if (nextEl.tagName && nextEl.tagName.match(/^H[1-6]$/)) {
-                        log(`     Hit next heading, stopping`);
-                        break;
-                    }
-                    nextEl = nextEl.nextElementSibling;
-                }
-
-                log(`  -> Description length: ${description.length}`);
-
-                if (description.length > 30) {
-                    if (description.length > 600) {
-                        description = description.substring(0, 600) + '...';
-                    }
-                    numberedItems.push({
-                        number: parseInt(numberMatch[1]),
-                        title: headingText,
-                        description: description
-                    });
-                    log(`  -> ADDED to numberedItems`);
-                }
+            // Filter short/empty content
+            if (text.length < 10) {
+                skippedCount++;
+                return;
             }
+
+            // Exclude noise patterns
+            const lower = text.toLowerCase();
+            if (lower.includes('cookie') && lower.length < 100 ||
+                lower.includes('subscribe to') ||
+                lower.includes('all rights reserved') ||
+                lower.includes('follow us on') ||
+                lower.includes('share this')) {
+                skippedCount++;
+                return;
+            }
+
+            // formatting
+            let formattedText = text;
+
+            // Format headings
+            if (node.tagName.match(/^H\d$/)) {
+                formattedText = `\n## ${text}\n`;
+            }
+            // Format list items
+            else if (node.tagName === 'LI') {
+                formattedText = `• ${text}`;
+            }
+            // Format quotes
+            else if (node.tagName === 'BLOCKQUOTE') {
+                formattedText = `> ${text}`;
+            }
+
+            // Avoid adding identical text if it was just added (deduplication)
+            // This helps if <li> contains <p> and we select both. 
+            // The querySelectorAll sequence is document order (depth-first usually).
+            // Parent comes before child? No, actually traversal order.
+            // If we have <ul><li><p>text</p></li></ul>:
+            // Matches: LI, P.
+            // Order: LI comes first in generic traversal, then P inside it?
+
+            // Actually, simply checking if the text is contained in the *immediately preceding* item is often enough
+            // But we need to be careful.
+            // Safer to check if the current node contains other selected nodes, but that's expensive.
+
+            // Alternative: use NodeIterator or TreeWalker.
+            // Or keep it simple: if we added "Text X" and now we see "Text X" again, skip.
+
+            if (textContent.length > 0) {
+                const lastItem = textContent[textContent.length - 1].trim();
+                // Check if strict duplicate
+                if (lastItem === formattedText.trim()) return;
+
+                // Check if one contains the other (nested case)
+                if (lastItem.includes(formattedText.trim()) && formattedText.length > 20) return; // Child text already inside parent
+                // Note: If parent text was added, it likely includes child text.
+            }
+
+            textContent.push(formattedText);
+            addedCount++;
         });
 
-        log(`Total numbered items found: ${numberedItems.length}`);
-
-        // If we found numbered items, use them
-        if (numberedItems.length >= 3) {
-            // Sort by number (descending for "top 10" style, ascending for "1-10" style)
-            numberedItems.sort((a, b) => b.number - a.number);
-
-            numberedItems.forEach(item => {
-                textContent.push(`${item.title}\n${item.description}`);
-            });
-
-            const numberedText = textContent.join('\n\n');
-            if (numberedText.length > 10000) {
-                return numberedText.substring(0, 10000) + '\n\n[Content truncated]';
-            }
-            return numberedText;
-        }
-
-        // Fallback 1: Look for ordered lists (OL) which are usually main content
-        log('=== FALLBACK: LOOKING FOR ORDERED LISTS ===');
-        const orderedLists = clone.querySelectorAll('ol');
-        if (orderedLists.length > 0) {
-            let mainList = null;
-            let maxItems = 0;
-            orderedLists.forEach((list, idx) => {
-                const itemCount = list.querySelectorAll('li').length;
-                log(`OL ${idx}: ${itemCount} items`);
-                if (itemCount > maxItems) {
-                    maxItems = itemCount;
-                    mainList = list;
-                }
-            });
-
-            if (mainList && maxItems >= 3) {
-                const listItems = mainList.querySelectorAll('li');
-                listItems.forEach((item, index) => {
-                    let itemText = item.textContent.trim();
-                    if (itemText.length > 500) {
-                        itemText = itemText.substring(0, 500) + '...';
-                    }
-                    if (itemText && itemText.length > 10) {
-                        textContent.push(`${index + 1}. ${itemText}`);
-                    }
-                });
-
-                if (textContent.length >= 3) {
-                    log(`Using ordered list with ${textContent.length} items`);
-                    const listText = textContent.join('\n\n');
-                    if (listText.length > 10000) {
-                        return listText.substring(0, 10000) + '\n\n[Content truncated]';
-                    }
-                    return listText;
-                }
-            }
-        }
-
-        // Fallback 2: Look for sections or article items
-        const sections = clone.querySelectorAll('section, .slide, .item, .gallery-item');
-
-        if (sections.length >= 3) {
-            let itemIndex = 0;
-            sections.forEach(section => {
-                const heading = section.querySelector('h1, h2, h3, h4, h5');
-                const paragraphs = section.querySelectorAll('p');
-
-                if (heading || paragraphs.length > 0) {
-                    itemIndex++;
-                    let sectionText = '';
-
-                    if (heading) {
-                        sectionText = heading.textContent.trim();
-                    }
-
-                    if (paragraphs.length > 0) {
-                        const paraTexts = Array.from(paragraphs)
-                            .map(p => p.textContent.trim())
-                            .filter(t => t.length > 20)
-                            .slice(0, 2);
-
-                        if (paraTexts.length > 0) {
-                            sectionText += (sectionText ? ': ' : '') + paraTexts.join(' ');
-                        }
-                    }
-
-                    if (sectionText && sectionText.length > 30) {
-                        if (sectionText.length > 500) {
-                            sectionText = sectionText.substring(0, 500) + '...';
-                        }
-                        textContent.push(`${itemIndex}. ${sectionText}`);
-                    }
-                }
-            });
-
-            if (textContent.length >= 3) {
-                const sectionText = textContent.join('\n\n');
-                if (sectionText.length > 10000) {
-                    return sectionText.substring(0, 10000) + '\n\n[Content truncated]';
-                }
-                return sectionText;
-            }
-        }
-
-        // Fallback: Extract paragraphs directly
-        log('=== FALLBACK: EXTRACTING PARAGRAPHS ===');
-        const allParagraphs = clone.querySelectorAll('p');
-        log(`Found ${allParagraphs.length} paragraph elements`);
-
-        if (allParagraphs.length > 0) {
-            let addedCount = 0;
-            allParagraphs.forEach((p, idx) => {
-                const text = p.textContent.trim();
-                if (idx < 5) {
-                    log(`Paragraph ${idx}: ${text.length} chars - "${text.substring(0, 50)}..."`);
-                }
-                // Filter out short and unwanted paragraphs
-                if (text.length >= 50) {
-                    const lower = text.toLowerCase();
-                    if (!lower.includes('cookie') &&
-                        !lower.includes('subscribe to') &&
-                        !lower.includes('newsletter') &&
-                        !lower.includes('follow us on') &&
-                        !lower.includes('share this')) {
-
-                        let paraText = text;
-                        if (paraText.length > 600) {
-                            paraText = paraText.substring(0, 600) + '...';
-                        }
-                        textContent.push(paraText);
-                        addedCount++;
-                    }
-                }
-            });
-            log(`Added ${addedCount} paragraphs to content`);
-        }
-
-        // If still no content, try raw text extraction as last resort
-        if (textContent.length === 0) {
-            log('=== LAST RESORT: RAW TEXT EXTRACTION ===');
-            const remainingText = clone.textContent || clone.innerText || '';
-            log(`Raw text length: ${remainingText.length}`);
+        // Fallback: If structured blocks yielded nothing (e.g. text nodes directly in DIVs), try raw text
+        if (addedCount === 0) {
+            log('=== FALLBACK: RAW TEXT EXTRACTION ===');
+            const remainingText = clone.innerText || clone.textContent || '';
             const paragraphs = remainingText
                 .split(/\n\s*\n/)
                 .map(p => p.trim())
-                .filter(p => p.length >= 50)
-                .slice(0, 20);
+                .filter(p => p.length >= 50);
 
-            log(`Split into ${paragraphs.length} text blocks`);
-
-            paragraphs.forEach(para => {
-                const trimmed = para.trim();
-                if (trimmed && !textContent.includes(trimmed)) {
-                    textContent.push(trimmed);
-                }
-            });
+            paragraphs.forEach(p => textContent.push(p));
         }
 
         const finalText = textContent.join('\n\n');
@@ -425,9 +308,9 @@
             log('WARNING: No content extracted!');
         }
 
-        // Limit total content to prevent issues (max 10000 chars)
-        if (finalText.length > 10000) {
-            return finalText.substring(0, 10000) + '\n\n[Content truncated - 10,000 char limit]';
+        // Limit total content to prevent issues (max 12000 chars)
+        if (finalText.length > 12000) {
+            return finalText.substring(0, 12000) + '\n\n[Content truncated - 12,000 char limit]';
         }
 
         return finalText;
