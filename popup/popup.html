@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=400, initial-scale=1.0">
     <title>Page Summariser</title>
     <link rel="stylesheet" href="popup.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -13,99 +14,91 @@
         <!-- Header -->
         <header class="header">
             <button id="backBtn" class="back-btn hidden" aria-label="Go back">
-                ← Back
+                <span class="icon">←</span> Back
             </button>
             <h1 id="headerTitle">Page Summariser</h1>
-            <div class="header-spacer"></div>
+            <button class="btn-icon" id="toggleApiSection" aria-label="Toggle API settings">
+                ⚙️
+            </button>
         </header>
 
         <!-- Main View (API Key + History) -->
         <div id="mainView" class="view">
-            <!-- API Key Section -->
-            <div class="api-section">
-                <div class="api-header" id="apiHeader">
-                    <span class="api-status" id="apiStatus">
-                        <span class="status-dot" id="statusDot"></span>
-                        <span id="apiStatusText">API Key Not Set</span>
-                    </span>
-                    <button class="btn-icon" id="toggleApiSection" aria-label="Toggle API settings">
-                        ⚙️
-                    </button>
+            <!-- API Key Section (Collapsible) -->
+            <div class="api-section hidden" id="apiForm">
+                <div class="form-group">
+                    <label for="apiKey">OpenRouter API Key</label>
+                    <div class="input-with-toggle">
+                        <input type="password" id="apiKey" placeholder="sk-or-..." autocomplete="off">
+                        <button type="button" class="toggle-visibility" id="toggleApiKey" aria-label="Toggle visibility">
+                            👁️
+                        </button>
+                    </div>
                 </div>
-                <div class="api-form hidden" id="apiForm">
-                    <div class="form-group">
-                        <label for="apiKey">OpenRouter API Key</label>
-                        <div class="input-with-toggle">
-                            <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key"
-                                autocomplete="off">
-                            <button type="button" class="toggle-visibility" id="toggleApiKey"
-                                aria-label="Toggle API key visibility">
-                                👁️
-                            </button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="customCode">Model (optional)</label>
-                        <input type="text" id="customCode" placeholder="e.g., google/gemini-2.0-flash-exp:free"
-                            autocomplete="off">
-                        <small class="hint">Leave empty to auto-cycle free models</small>
-                    </div>
+                <div class="form-group">
+                    <label for="customCode">Model (optional)</label>
+                    <input type="text" id="customCode" placeholder="Default: Auto-cycle free models" autocomplete="off">
                 </div>
             </div>
 
             <!-- Model Status -->
             <div class="model-status" id="modelStatus">
-                <span class="model-status-icon">🤖</span>
-                <span class="model-status-text" id="modelStatusText">Loading...</span>
+                <span class="model-status-icon">✨</span>
+                <span class="model-status-text" id="modelStatusText">Ready to summarize</span>
+                <span class="status-dot tooltip" id="statusDot" title="API Status"></span>
             </div>
-
-            <!-- Summarize Current Page Button -->
-            <button id="summarizeBtn" class="btn btn-primary btn-summarize">
-                📄 Summarize Current Page
-            </button>
 
             <!-- History Section -->
             <div class="history-section">
                 <div class="history-header">
-                    <h2>📚 History</h2>
-                    <button id="clearHistoryBtn" class="btn-text" title="Clear all history">
-                        Clear All
-                    </button>
+                    <h2>History</h2>
+                    <button id="clearHistoryBtn" class="btn-text" title="Clear all history">Clear All</button>
                 </div>
                 <div id="historyList" class="history-list">
+                    <!-- Empty State -->
                     <div class="empty-history">
-                        <span class="empty-icon">📝</span>
+                        <div class="empty-illustration">📝</div>
                         <p>No summaries yet</p>
-                        <small>Summarize a page to see it here</small>
+                        <small>Visit a page and click Summarize</small>
                     </div>
                 </div>
             </div>
+            
+            <!-- Summarize Current Page Button (Floating) -->
+            <div class="summarize-container">
+                <button id="summarizeBtn" class="btn btn-primary btn-summarize">
+                    <span class="icon">✨</span> Summarize Current Page
+                </button>
+            </div>
         </div>
 
-        <!-- Loading State -->
+        <!-- Loading State (Skeleton) -->
         <div id="loadingView" class="view hidden">
-            <div class="loading-container">
-                <div class="loading-spinner"></div>
-                <p class="loading-text" id="loadingText">Extracting content...</p>
-                <p class="loading-subtext" id="loadingSubtext"></p>
+            <div class="skeleton-container">
+                <div class="skeleton-header"></div>
+                <div class="skeleton-line full"></div>
+                <div class="skeleton-line long"></div>
+                <div class="skeleton-line medium"></div>
+                <div class="skeleton-line short"></div>
+                <div class="skeleton-line full"></div>
+                <div class="skeleton-line long"></div>
             </div>
+            <p class="loading-text" id="loadingText">Analyzing page content...</p>
         </div>
 
         <!-- Summary Detail View -->
         <div id="detailView" class="view hidden">
-            <div class="detail-meta" id="detailMeta">
-                <!-- Filled dynamically -->
+            <div class="detail-content" id="detailContent">
+                <!-- Summary content text -->
             </div>
+            
             <div class="detail-actions">
-                <button id="exportBtn" class="btn btn-secondary">
-                    💾 Export to File
+                 <button id="exportBtn" class="btn btn-outline-primary">
+                    💾 Export
                 </button>
-                <button id="deleteEntryBtn" class="btn btn-danger-outline">
+                <button id="deleteEntryBtn" class="btn btn-ghost-danger">
                     🗑️ Delete
                 </button>
-            </div>
-            <div class="detail-content" id="detailContent">
-                <!-- Summary content -->
             </div>
         </div>
 
@@ -113,11 +106,14 @@
         <div id="errorView" class="view hidden">
             <div class="error-container">
                 <div class="error-icon">⚠️</div>
-                <h3>Error</h3>
+                <h3>Something went wrong</h3>
                 <p id="errorMessage" class="error-message"></p>
                 <button id="retryBtn" class="btn btn-primary">Try Again</button>
             </div>
         </div>
+        
+        <!-- Toast Container -->
+        <div id="toastContainer" class="toast-container"></div>
     </div>
 
     <script src="popup.js"></script>

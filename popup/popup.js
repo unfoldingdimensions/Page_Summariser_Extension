@@ -38,13 +38,14 @@
 
         // Content areas
         historyList: document.getElementById('historyList'),
-        detailMeta: document.getElementById('detailMeta'),
+        detailMeta: document.getElementById('detailMeta'), // Removed in new HTML, checking existence
         detailContent: document.getElementById('detailContent'),
         errorMessage: document.getElementById('errorMessage'),
         loadingText: document.getElementById('loadingText'),
         loadingSubtext: document.getElementById('loadingSubtext'),
         modelStatus: document.getElementById('modelStatus'),
-        modelStatusText: document.getElementById('modelStatusText')
+        modelStatusText: document.getElementById('modelStatusText'),
+        toastContainer: document.getElementById('toastContainer')
     };
 
     // ============================================
@@ -80,7 +81,14 @@
         elements.backBtn.addEventListener('click', goBack);
 
         // API Section
-        elements.apiHeader.addEventListener('click', toggleApiForm);
+        // Use button for toggle now
+        elements.toggleApiSection.addEventListener('click', toggleApiForm);
+
+        // Also allow clicking header text area if it still exists (it doesn't in new HTML structure, but preserving for safety)
+        if (elements.apiHeader) {
+            elements.apiHeader.addEventListener('click', toggleApiForm);
+        }
+
         elements.toggleApiKeyBtn.addEventListener('click', toggleApiKeyVisibility);
         elements.apiKeyInput.addEventListener('blur', savePreferences);
         elements.apiKeyInput.addEventListener('input', debounce(savePreferences, 1000));
@@ -184,20 +192,30 @@
         if (viewName === 'main') {
             elements.backBtn.classList.add('hidden');
             elements.headerTitle.textContent = 'Page Summariser';
-        } else if (viewName === 'detail') {
-            elements.backBtn.classList.remove('hidden');
-            elements.headerTitle.textContent = 'Summary';
-        } else if (viewName === 'loading') {
-            elements.backBtn.classList.add('hidden');
-            elements.headerTitle.textContent = 'Page Summariser';
-        } else if (viewName === 'error') {
-            elements.backBtn.classList.remove('hidden');
-            elements.headerTitle.textContent = 'Page Summariser';
+            elements.toggleApiSection.classList.remove('hidden');
+            // Show summarize button only in main view
+            if (elements.summarizeBtn) elements.summarizeBtn.parentElement.classList.remove('hidden');
+        } else {
+            elements.toggleApiSection.classList.add('hidden');
+            // Hide summarize button in other views
+            if (elements.summarizeBtn) elements.summarizeBtn.parentElement.classList.add('hidden');
+
+            if (viewName === 'detail') {
+                elements.backBtn.classList.remove('hidden');
+                elements.headerTitle.textContent = 'Summary';
+            } else if (viewName === 'loading') {
+                elements.backBtn.classList.add('hidden');
+                elements.headerTitle.textContent = 'Page Summariser';
+            } else if (viewName === 'error') {
+                elements.backBtn.classList.remove('hidden');
+                elements.headerTitle.textContent = 'Page Summariser';
+            }
         }
     }
 
     function goBack() {
         currentSummaryId = null;
+        renderHistory(); // Refresh history list
         showView('main');
     }
 
@@ -207,12 +225,15 @@
     function updateApiStatus() {
         const hasApiKey = elements.apiKeyInput.value.trim().length > 0;
 
-        if (hasApiKey) {
-            elements.statusDot.classList.add('active');
-            elements.apiStatusText.textContent = 'API Key Configured';
-        } else {
-            elements.statusDot.classList.remove('active');
-            elements.apiStatusText.textContent = 'API Key Not Set';
+        // This element might not exist in new design, but keep logic safe
+        if (elements.apiStatusText) {
+            if (hasApiKey) {
+                elements.statusDot?.classList.add('active');
+                elements.apiStatusText.textContent = 'API Key Configured';
+            } else {
+                elements.statusDot?.classList.remove('active');
+                elements.apiStatusText.textContent = 'API Key Not Set';
+            }
         }
     }
 
@@ -235,23 +256,26 @@
 
             if (available === 0) {
                 elements.modelStatus.classList.add('danger');
-                elements.modelStatusText.innerHTML = `<strong>All ${total} free models exhausted</strong> • Resets at midnight UTC`;
+                elements.modelStatusText.innerHTML = `<strong>All free models exhausted</strong>`;
             } else if (exhausted > 0) {
                 elements.modelStatus.classList.add('warning');
-                elements.modelStatusText.innerHTML = `<strong>${available}/${total} free models available</strong> • Auto-cycling enabled`;
+                elements.modelStatusText.innerHTML = `<strong>${available}/${total} free models</strong>`;
             } else {
-                elements.modelStatusText.innerHTML = `<strong>${available} free models ready</strong> • Auto-cycling enabled`;
+                elements.modelStatusText.innerHTML = `<strong>Ready to summarize</strong>`;
             }
         } catch (error) {
             console.log('Could not get model status:', error);
-            elements.modelStatusText.textContent = 'Free models with auto-cycling';
+            elements.modelStatusText.textContent = 'Ready';
         }
     }
 
     function toggleApiForm() {
         const isHidden = elements.apiForm.classList.contains('hidden');
-        elements.apiForm.classList.toggle('hidden');
-        elements.toggleApiSection.classList.toggle('rotated', isHidden);
+        if (isHidden) {
+            elements.apiForm.classList.remove('hidden');
+        } else {
+            elements.apiForm.classList.add('hidden');
+        }
     }
 
     function toggleApiKeyVisibility() {
@@ -269,6 +293,7 @@
         if (elements.loadingText) {
             elements.loadingText.textContent = mainText;
         }
+        // Subtext element removed in new design?
         if (elements.loadingSubtext) {
             elements.loadingSubtext.textContent = subText;
         }
@@ -278,12 +303,17 @@
     // History Rendering
     // ============================================
     function renderHistory() {
+        // Toggle Clear All button visibility
+        if (elements.clearHistoryBtn) {
+            elements.clearHistoryBtn.style.display = summaryHistory.length > 0 ? 'block' : 'none';
+        }
+
         if (summaryHistory.length === 0) {
             elements.historyList.innerHTML = `
                 <div class="empty-history">
-                    <span class="empty-icon">📝</span>
+                    <div class="empty-illustration">📝</div>
                     <p>No summaries yet</p>
-                    <small>Summarize a page to see it here</small>
+                    <small>Visit a page and click Summarize</small>
                 </div>
             `;
             return;
@@ -292,13 +322,11 @@
         elements.historyList.innerHTML = summaryHistory.map(entry => `
             <div class="history-item" data-id="${entry.id}">
                 <div class="history-item-title">${escapeHtml(entry.title)}</div>
-                <div class="history-item-meta">
-                    <span class="history-item-site">
-                        <img src="${entry.favicon}" alt="" onerror="this.style.display='none'">
-                        ${escapeHtml(entry.hostname)}
-                    </span>
-                    <span class="history-item-date">${formatDate(entry.createdAt)}</span>
+                <div class="history-item-site">
+                    <img src="${entry.favicon}" alt="" onerror="this.style.display='none'">
+                    ${escapeHtml(entry.hostname)}
                 </div>
+                <div class="history-item-date">${formatDate(entry.createdAt)}</div>
             </div>
         `).join('');
 
@@ -343,32 +371,21 @@
 
         currentSummaryId = id;
 
-        // Build model info HTML
-        let modelBadge = '';
-        if (entry.modelInfo && entry.modelInfo.name) {
-            const fallbackNote = entry.modelInfo.fallbackUsed ? ' (fallback)' : '';
-            modelBadge = `<div class="model-badge">🤖 ${entry.modelInfo.name}${fallbackNote}</div>`;
-        } else if (entry.modelInfo && entry.modelInfo.id) {
-            modelBadge = `<div class="model-badge">🤖 ${entry.modelInfo.id}</div>`;
-        }
-
-        elements.detailMeta.innerHTML = `
-            <div class="detail-title">${escapeHtml(entry.title)}</div>
-            <div class="detail-info">
-                <span class="detail-info-item">
-                    🌐 <a href="${entry.url}" target="_blank">${entry.hostname}</a>
-                </span>
-                <span class="detail-info-item">
-                    📅 ${new Date(entry.createdAt).toLocaleString()}
-                </span>
-                <span class="detail-info-item">
-                    📝 ${entry.wordCount?.toLocaleString() || 0} words
-                </span>
+        // Build summary content with header info prepended (since we removed the separate meta block)
+        const headerHtml = `
+            <div style="border-bottom: 1px solid #E5E7EB; padding-bottom: 16px; margin-bottom: 16px;">
+                <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #111827;">${escapeHtml(entry.title)}</h2>
+                <div style="display: flex; gap: 12px; font-size: 12px; color: #6B7280; flex-wrap: wrap;">
+                    <a href="${entry.url}" target="_blank" style="color: #6366F1; text-decoration: none; display: flex; align-items: center; gap: 4px;">
+                        🌐 ${escapeHtml(entry.hostname)}
+                    </a>
+                    <span>📅 ${new Date(entry.createdAt).toLocaleString()}</span>
+                    <span>📝 ${entry.wordCount?.toLocaleString() || 0} words</span>
+                </div>
             </div>
-            ${modelBadge}
         `;
 
-        elements.detailContent.textContent = entry.summary;
+        elements.detailContent.innerHTML = headerHtml + escapeHtmlText(entry.summary);
         showView('detail');
     }
 
@@ -382,10 +399,8 @@
         const customCode = elements.customCodeInput.value.trim();
 
         if (!apiKey) {
-            // Show API form if not visible
-            if (elements.apiForm.classList.contains('hidden')) {
-                toggleApiForm();
-            }
+            // Show API form and highlight
+            elements.apiForm.classList.remove('hidden');
             elements.apiKeyInput.focus();
             showToast('Please enter your OpenRouter API key', 'error');
             return;
@@ -399,7 +414,7 @@
 
         isProcessing = true;
         showView('loading');
-        updateLoadingText('Extracting content...', '');
+        // updateLoadingText('Extracting content...', ''); // Skeleton handles this visually now
         elements.summarizeBtn.disabled = true;
 
         try {
@@ -429,7 +444,6 @@
             await new Promise(resolve => setTimeout(resolve, 100));
 
             // Extract content
-            updateLoadingText('Extracting page content...', '');
             let contentResponse;
             try {
                 contentResponse = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
@@ -466,21 +480,9 @@
                 throw new Error('No text content found on this page.');
             }
 
-            // Update loading with content info
-            const wordCount = contentResponse.wordCount || 0;
-            const estimatedTokens = Math.ceil((contentResponse.charCount || 0) / 4);
-
-            if (estimatedTokens > 3000) {
-                updateLoadingText(
-                    'Processing large content...',
-                    `Using chunking for ${wordCount.toLocaleString()} words`
-                );
-            } else {
-                updateLoadingText(
-                    'Summarizing content...',
-                    `Processing ${wordCount.toLocaleString()} words`
-                );
-            }
+            // Update loading with content info (optional, since we use skeleton now)
+            // const wordCount = contentResponse.wordCount || 0;
+            // updateLoadingText(`Found ${wordCount.toLocaleString()} words...`);
 
             // KEEP ALIVE: Connect to background to keep service worker alive
             let keepAlivePort;
@@ -499,9 +501,6 @@
             }
 
             // Send to background for summarization
-            console.log('=== POPUP: Sending to background ===');
-            console.log('Content length:', contentResponse.content?.length);
-
             const summaryResponse = await chrome.runtime.sendMessage({
                 action: 'summarize',
                 text: contentResponse.content,
@@ -513,9 +512,6 @@
             if (keepAlivePort) {
                 keepAlivePort.disconnect();
             }
-
-            console.log('=== POPUP: Response received ===');
-            console.log('Success:', summaryResponse?.success);
 
             if (!summaryResponse || !summaryResponse.success) {
                 throw new Error(summaryResponse?.error || 'Failed to summarize content');
@@ -630,7 +626,7 @@ ${entry.summary}
             title: 'Delete Summary?',
             message: `Are you sure you want to delete "${truncate(entry.title, 40)}"?`,
             confirmText: 'Delete',
-            confirmClass: 'btn-danger-outline',
+            confirmClass: 'btn-ghost-danger',
             onConfirm: async () => {
                 await deleteSummary(currentSummaryId);
                 renderHistory();
@@ -646,9 +642,9 @@ ${entry.summary}
         showConfirmModal({
             icon: '⚠️',
             title: 'Clear All History?',
-            message: `This will permanently delete all ${summaryHistory.length} summaries. This cannot be undone.`,
+            message: `This will permanently delete all ${summaryHistory.length} summaries.`,
             confirmText: 'Clear All',
-            confirmClass: 'btn-danger-outline',
+            confirmClass: 'btn-ghost-danger',
             onConfirm: async () => {
                 await clearAllHistory();
                 renderHistory();
@@ -690,15 +686,20 @@ ${entry.summary}
     }
 
     function showToast(message, type = 'success') {
-        const existing = document.querySelector('.toast');
-        if (existing) existing.remove();
+        // Appending to toastContainer allows stacking/positioning control
+        const container = elements.toastContainer;
+        if (!container) return; // safety check
 
         const toast = document.createElement('div');
         toast.className = `toast ${type === 'error' ? 'error' : ''}`;
         toast.innerHTML = `${type === 'success' ? '✓' : '✕'} ${message}`;
-        document.body.appendChild(toast);
+        container.appendChild(toast);
 
-        setTimeout(() => toast.remove(), 3000);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
 
     function showError(message) {
@@ -710,9 +711,22 @@ ${entry.summary}
     // Utilities
     // ============================================
     function escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // For large text content, we might not want to escape everything if we trust the source,
+    // but relying on .textContent assignment is safer. 
+    // This helper preserves newlines.
+    function escapeHtmlText(text) {
+        if (!text) return '';
+        // We use textContent on the element usually, so just return raw text for that, 
+        // but if we are building HTML strings, we need escaping.
+        // For detailContent we use innerHTML to insert the header, but then we should append text node or safe HTML.
+        // Let's implement a simple safe line-break converter
+        return text.split('\n').map(line => escapeHtml(line)).join('<br>');
     }
 
     function sanitizeFilename(filename) {
